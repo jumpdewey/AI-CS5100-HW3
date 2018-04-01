@@ -101,7 +101,7 @@ def constructBayesNet(gameState):
     edges.append((Y_POS_VAR, GHOST_HOUSE_VAR))
     # populate 'obsVars'
     for housePos in gameState.getPossibleHouses():
-        for obsPos in gameState.getHouseWalls(housePos)
+        for obsPos in gameState.getHouseWalls(housePos):
             obsVar = OBS_VAR_TEMPLATE % obsPos
             obsVars.append(obsVar)
             #set variableDomainsDict
@@ -142,8 +142,10 @@ def fillYCPT(bayesNet, gameState):
     """
 
     yFactor = bn.Factor([Y_POS_VAR], [], bayesNet.variableDomainsDict())
-    "*** YOUR CODE HERE ***"
-    util.raiseNotDefined()
+    yFactor.setProbability({Y_POS_VAR: BOTH_TOP_VAL}, PROB_BOTH_TOP)
+    yFactor.setProbability({Y_POS_VAR: BOTH_BOTTOM_VAL}, PROB_BOTH_BOTTOM)
+    yFactor.setProbability({Y_POS_VAR: LEFT_TOP_VAL}, PROB_ONLY_LEFT_TOP)
+    yFactor.setProbability({Y_POS_VAR: LEFT_BOTTOM_VAL}, PROB_ONLY_LEFT_BOTTOM)
     bayesNet.setCPT(Y_POS_VAR, yFactor)
 
 def fillHouseCPT(bayesNet, gameState):
@@ -208,7 +210,51 @@ def fillObsCPT(bayesNet, gameState):
     bottomLeftPos, topLeftPos, bottomRightPos, topRightPos = gameState.getPossibleHouses()
 
     "*** YOUR CODE HERE ***"
-    util.raiseNotDefined()
+    def getHouseVal(x, y):
+        w, h = gameState.data.layout.width, gameState.data.layout.height
+        if x < w/2.0 and y < h/2.0:
+            return BOTTOM_LEFT_VAL
+        if x > w/2.0 and y < h/2.0:
+            return BOTTOM_RIGHT_VAL
+        if x < w/2.0 and y > h/2.0:
+            return TOP_LEFT_VAL
+        if x > w/2.0 and y > h/2.0:
+            return TOP_RIGHT_VAL
+
+
+    for house in gameState.getPossibleHouses():
+        for obss in gameState.getHouseWalls(house):
+            obsVar = OBS_VAR_TEMPLATE % obss
+            obsFactor = bn.Factor([obsVar], [FOOD_HOUSE_VAR, GHOST_HOUSE_VAR], bayesNet.variableDomainsDict())
+            for r in obsFactor.getAllPossibleAssignmentDicts():
+                ghostHouse = r[GHOST_HOUSE_VAR]
+                foodHouse = r[FOOD_HOUSE_VAR]
+                color = r[obsVar]
+                probr = 0
+                probb = 0
+                probn = 0
+                if foodHouse == getHouseVal(obss[0], obss[1]):
+                    probr = PROB_FOOD_RED
+                    probb = 1-probr
+                    probn = 0
+                elif ghostHouse == getHouseVal(obss[0], obss[1]):
+                    probr = PROB_GHOST_RED
+                    probb = 1-probr
+                    probn = 0
+                else:
+                    probr = 0
+                    probb = 0
+                    probn = 1
+                if color == BLUE_OBS_VAL:
+                    obsFactor.setProbability(r, probb)
+                elif color == RED_OBS_VAL:
+                    obsFactor.setProbability(r, probr)
+                else:
+                    obsFactor.setProbability(r, probn)
+            bayesNet.setCPT(obsVar, obsFactor)
+
+
+
 
 def getMostLikelyFoodHousePosition(evidence, bayesNet, eliminationOrder):
     """
@@ -223,7 +269,17 @@ def getMostLikelyFoodHousePosition(evidence, bayesNet, eliminationOrder):
     (This should be a very short method.)
     """
     "*** YOUR CODE HERE ***"
-    util.raiseNotDefined()
+    query = inference.inferenceByVariableElimination(bayesNet, FOOD_HOUSE_VAR, evidence, eliminationOrder)
+    # print query.getAllPossibleAssignmentDicts()
+    tmp = 0
+    rst = None
+    for assign in query.getAllPossibleAssignmentDicts():
+        # print assign
+        if query.getProbability(assign) > tmp:
+            tmp = query.getProbability(assign)
+            rst = assign
+    return rst
+
 
 
 class BayesAgent(game.Agent):
@@ -325,8 +381,15 @@ class VPIAgent(BayesAgent):
         rightExpectedValue = 0
 
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
-
+        query = inference.inferenceByVariableElimination(self.bayesNet, HOUSE_VARS, evidence, eliminationOrder)
+        leftFactor = evidence.copy()
+        leftFactor[FOOD_HOUSE_VAR] = TOP_LEFT_VAL
+        leftFactor[GHOST_HOUSE_VAR] = TOP_RIGHT_VAL
+        rightFactor = evidence.copy()
+        rightFactor[FOOD_HOUSE_VAR] = TOP_RIGHT_VAL
+        rightFactor[GHOST_HOUSE_VAR] = TOP_LEFT_VAL
+        leftExpectedValue = query.getProbability(leftFactor)*WON_GAME_REWARD + query.getProbability(rightFactor)*GHOST_COLLISION_REWARD
+        rightExpectedValue = query.getProbability(rightFactor)*WON_GAME_REWARD + query.getProbability(leftFactor)*GHOST_COLLISION_REWARD
         return leftExpectedValue, rightExpectedValue
 
     def getExplorationProbsAndOutcomes(self, evidence):
@@ -391,8 +454,8 @@ class VPIAgent(BayesAgent):
         expectedValue = 0
 
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
-
+        for prob, explorationEvidence in self.getExplorationProbsAndOutcomes(evidence):
+            expectedValue += prob * max(self.computeEnterValues(explorationEvidence, enterEliminationOrder))
         return expectedValue
 
     def getAction(self, gameState):
